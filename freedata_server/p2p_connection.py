@@ -66,7 +66,8 @@ class P2PConnection:
 
         self.destination = destination
         self.origin = origin
-        self.bandwidth = 0
+        #Valid baandwidth may be needed for some VARA clients to accept connections.
+        self.bandwidth = 500
 
         self.state_manager = state_manager
         self.event_manager = event_manager
@@ -236,7 +237,10 @@ class P2PConnection:
             self.set_state(States.PAYLOAD_SENT)
             data = self.p2p_data_tx_queue.get()
             sequence_id = random.randint(0,255)
-            data = data.encode('utf-8')
+            try:
+                data = data.encode('utf-8')
+            except:
+                print("Data is already bytes, no need for encoding")
 
             if len(data) <= 11:
                 mode = FREEDV_MODE.signalling

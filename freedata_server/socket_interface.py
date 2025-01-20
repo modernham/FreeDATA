@@ -40,13 +40,25 @@ class CommandSocket(socketserver.BaseRequestHandler):
     def handle(self):
         self.log(f"Client connected: {self.client_address}")
         try:
+            sent_connected = False
+            sent_disconnected = False
             while True:
-                data = self.request.recv(1024).strip()
-                if not data:
-                    break
-                decoded_data = data.decode()
-                self.log(f"Command received from {self.client_address}: {decoded_data}")
-                self.parse_command(decoded_data)
+                ready_to_read, _, _ = select.select([self.request], [], [], 1)  # 1-second timeout
+                if self.request in ready_to_read:
+                    data = self.request.recv(1024).strip()
+                    if not data:
+                        break
+                    decoded_data = data.decode()
+                    self.log(f"Command received from {self.client_address}: {decoded_data}")
+                    self.parse_command(decoded_data)
+                #We need to handle new connections so that the client is sent the same stuff VARA would on a successful incoming conneciton.
+                #Not sure how to do that here...
+                if len(self.state_manager.p2p_connection_sessions) >= 1 and sent_connected == False:
+                    sent_connected = True
+                elif len(self.state_manager.p2p_connection_sessions) <= 1 and sent_disconnected == False:
+                    sent_connected = False
+                    sent_disconnected = True
+                    self.command_handler.socket_respond_disconnected()
         finally:
             self.log(f"Command connection closed with {self.client_address}")
 
@@ -57,7 +69,7 @@ class CommandSocket(socketserver.BaseRequestHandler):
                 args = data[len(command):].strip().split()
                 self.dispatch_command(command, args)
                 return
-        self.command_handler.send_response("ERROR: Unknown command\r\n")
+        self.command_handler.send_response("ERROR: Unknown command")
 
     def dispatch_command(self, command, data):
         if command in self.handlers:
@@ -100,16 +112,16 @@ class DataSocket(socketserver.BaseRequestHandler):
                     except Exception:
                         self.log(f"Data received from {self.client_address}: [{len(self.data)}] - {self.data}")
 
-                    for session in self.state_manager.p2p_connection_sessions:
-                        print(f"sessions: {session}")
-                        session.p2p_data_tx_queue.put(self.data)
+                    for session_id in self.state_manager.p2p_connection_sessions:
+                        #Is this the correct way to TX a data frame?
+                        #Old version didn't seem to do anything?
+                        self.state_manager.get_p2p_connection_session(session_id).p2p_data_tx_queue.put(self.data)
 
-                # Check if there's something to send from the queue, without blocking
 
                 for session_id in self.state_manager.p2p_connection_sessions:
                     session = self.state_manager.get_p2p_connection_session(session_id)
-                    if not session.p2p_data_tx_queue.empty():
-                        data_to_send = session.p2p_data_tx_queue.get_nowait()  # Use get_nowait to avoid blocking
+                    if not session.p2p_data_rx_queue.empty():
+                        data_to_send = session.p2p_data_rx_queue.get_nowait()  # Use get_nowait to avoid blocking
                         self.request.sendall(data_to_send)
                         self.log(f"Sent data to {self.client_address}")
 
