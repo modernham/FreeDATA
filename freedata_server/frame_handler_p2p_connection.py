@@ -16,15 +16,20 @@ class P2PConnectionFrameHandler(frame_handler.FrameHandler):
         session_id = frame['session_id']
         snr = self.details["snr"]
         frequency_offset = self.details["frequency_offset"]
+        print("Frame_handler_p2p_Conneciton")
+        print(frame)
 
         if frame['frame_type_int'] == FR.P2P_CONNECTION_CONNECT.value:
+            print('frame_type_int')
 
             # Lost OPEN_ACK case .. ISS will retry opening a session
             if session_id in self.states.arq_irs_sessions:
+                print('stateid in irs sessions')
                 session = self.states.p2p_connection_sessions[session_id]
 
             # Normal case when receiving a SESSION_OPEN for the first time
             else:
+                print('first time frame')
             #    if self.states.check_if_running_arq_session():
             #        self.logger.warning("DISCARDING SESSION OPEN because of ongoing ARQ session ", frame=frame)
             #        return
@@ -44,6 +49,7 @@ class P2PConnectionFrameHandler(frame_handler.FrameHandler):
             FR.P2P_CONNECTION_PAYLOAD.value,
             FR.P2P_CONNECTION_PAYLOAD_ACK.value,
         ]:
+            print('frame_type_int')
             session = self.states.get_p2p_connection_session(session_id)
 
         else:

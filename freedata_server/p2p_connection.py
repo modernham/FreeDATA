@@ -218,8 +218,14 @@ class P2PConnection:
         self.orign = frame["origin"]
         self.destination = frame["destination_crc"]
 
+        print(self.orign)
+        print(self.destination)
+
         if self.socket_command_handler:
+            print("Responding Connected")
             self.socket_command_handler.socket_respond_connected(self.origin, self.destination, self.bandwidth)
+        else:
+            print("Not responding connected")
 
         session_open_frame = self.frame_factory.build_p2p_connection_connect_ack(self.destination, self.origin, self.session_id)
         self.launch_twr_irs(session_open_frame, self.ENTIRE_CONNECTION_TIMEOUT, mode=FREEDV_MODE.signalling)
