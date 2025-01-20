@@ -7,16 +7,19 @@ import select
 from queue import Queue
 from socket_interface_commands import SocketCommandHandler
 
+
 class CommandSocket(socketserver.BaseRequestHandler):
-    #def __init__(self, request, client_address, server):
-    def __init__(self, request, client_address, server, modem=None, state_manager=None, event_manager=None, config_manager=None):
+    # def __init__(self, request, client_address, server):
+    def __init__(self, request, client_address, server, modem=None, state_manager=None, event_manager=None,
+                 config_manager=None):
         self.state_manager = state_manager
         self.event_manager = event_manager
         self.config_manager = config_manager
         self.modem = modem
         self.logger = structlog.get_logger(type(self).__name__)
 
-        self.command_handler = SocketCommandHandler(request, self.modem, self.config_manager, self.state_manager, self.event_manager)
+        self.command_handler = SocketCommandHandler(request, self.modem, self.config_manager, self.state_manager,
+                                                    self.event_manager)
 
         self.handlers = {
             'CONNECT': self.command_handler.handle_connect,
@@ -32,7 +35,7 @@ class CommandSocket(socketserver.BaseRequestHandler):
         }
         super().__init__(request, client_address, server)
 
-    def log(self, message, isWarning = False):
+    def log(self, message, isWarning=False):
         msg = f"[{type(self).__name__}]: {message}"
         logger = self.logger.warn if isWarning else self.logger.info
         logger(msg)
@@ -40,25 +43,13 @@ class CommandSocket(socketserver.BaseRequestHandler):
     def handle(self):
         self.log(f"Client connected: {self.client_address}")
         try:
-            sent_connected = False
-            sent_disconnected = False
             while True:
-                ready_to_read, _, _ = select.select([self.request], [], [], 1)  # 1-second timeout
-                if self.request in ready_to_read:
-                    data = self.request.recv(1024).strip()
-                    if not data:
-                        break
-                    decoded_data = data.decode()
-                    self.log(f"Command received from {self.client_address}: {decoded_data}")
-                    self.parse_command(decoded_data)
-                #We need to handle new connections so that the client is sent the same stuff VARA would on a successful incoming conneciton.
-                #Not sure how to do that here...
-                if len(self.state_manager.p2p_connection_sessions) >= 1 and sent_connected == False:
-                    sent_connected = True
-                elif len(self.state_manager.p2p_connection_sessions) <= 1 and sent_disconnected == False:
-                    sent_connected = False
-                    sent_disconnected = True
-                    self.command_handler.socket_respond_disconnected()
+                data = self.request.recv(1024).strip()
+                if not data:
+                    break
+                decoded_data = data.decode()
+                self.log(f"Command received from {self.client_address}: {decoded_data}")
+                self.parse_command(decoded_data)
         finally:
             self.log(f"Command connection closed with {self.client_address}")
 
@@ -79,10 +70,10 @@ class CommandSocket(socketserver.BaseRequestHandler):
             self.command_handler.send_response(f"Unknown command: {command}")
 
 
-
 class DataSocket(socketserver.BaseRequestHandler):
-    #def __init__(self, request, client_address, server):
-    def __init__(self, request, client_address, server, modem=None, state_manager=None, event_manager=None, config_manager=None):
+    # def __init__(self, request, client_address, server):
+    def __init__(self, request, client_address, server, modem=None, state_manager=None, event_manager=None,
+                 config_manager=None):
         self.state_manager = state_manager
         self.event_manager = event_manager
         self.config_manager = config_manager
@@ -92,7 +83,7 @@ class DataSocket(socketserver.BaseRequestHandler):
 
         super().__init__(request, client_address, server)
 
-    def log(self, message, isWarning = False):
+    def log(self, message, isWarning=False):
         msg = f"[{type(self).__name__}]: {message}"
         logger = self.logger.warn if isWarning else self.logger.info
         logger(msg)
@@ -101,7 +92,7 @@ class DataSocket(socketserver.BaseRequestHandler):
         self.log(f"Data connection established with {self.client_address}")
         try:
             while True:
-                
+
                 ready_to_read, _, _ = select.select([self.request], [], [], 1)  # 1-second timeout
                 if ready_to_read:
                     self.data = self.request.recv(1024).strip()
@@ -113,10 +104,18 @@ class DataSocket(socketserver.BaseRequestHandler):
                         self.log(f"Data received from {self.client_address}: [{len(self.data)}] - {self.data}")
 
                     for session_id in self.state_manager.p2p_connection_sessions:
-                        #Is this the correct way to TX a data frame?
-                        #Old version didn't seem to do anything?
-                        self.state_manager.get_p2p_connection_session(session_id).p2p_data_tx_queue.put(self.data)
+                        session = self.state_manager.p2p_connection_sessions[session_id]
 
+                        print(f"sessions: {self.state_manager.p2p_connection_sessions}")
+                        print(f"session_id: {session_id}")
+                        print(f"session: {session}")
+                        print(f"data to send: {self.data}")
+
+                        print(session.p2p_data_tx_queue.empty())
+                        session.p2p_data_tx_queue.put(self.data)
+                        print(session.p2p_data_tx_queue.empty())
+
+                # Check if there's something to send from the queue, without blocking
 
                 for session_id in self.state_manager.p2p_connection_sessions:
                     session = self.state_manager.get_p2p_connection_session(session_id)
@@ -129,7 +128,7 @@ class DataSocket(socketserver.BaseRequestHandler):
             self.log(f"Data connection closed with {self.client_address}")
 
 
-#class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+# class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 #    allow_reuse_address = True
 
 
@@ -142,6 +141,7 @@ class CustomThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServe
 
     def finish_request(self, request, client_address):
         self.RequestHandlerClass(request, client_address, self, **self.extra_args)
+
 
 class SocketInterfaceHandler:
     def __init__(self, modem, config_manager, state_manager, event_manager):
@@ -159,7 +159,7 @@ class SocketInterfaceHandler:
         self.command_server_thread = None
         self.data_server_thread = None
 
-    def log(self, message, isWarning = False):
+    def log(self, message, isWarning=False):
         msg = f"[{type(self).__name__}]: {message}"
         logger = self.logger.warn if isWarning else self.logger.info
         logger(msg)

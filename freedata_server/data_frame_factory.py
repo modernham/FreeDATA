@@ -1,10 +1,9 @@
 from modem_frametypes import FRAME_TYPE as FR_TYPE
 import helpers
 import codec2
-import maidenhead
+
 
 class DataFrameFactory:
-
     LENGTH_SIG0_FRAME = 14
     LENGTH_SIG1_FRAME = 14
     LENGTH_ACK_FRAME = 3
@@ -15,7 +14,7 @@ class DataFrameFactory:
     """
     ARQ_FLAGS = {
         'FINAL': 0,  # Bit-position for indicating the FINAL state
-        'ABORT': 1, # Bit-position for indicating the ABORT request
+        'ABORT': 1,  # Bit-position for indicating the ABORT request
         'CHECKSUM': 2,  # Bit-position for indicating the CHECKSUM is correct or not
     }
 
@@ -26,7 +25,7 @@ class DataFrameFactory:
     def __init__(self, config):
 
         self.myfullcall = f"{config['STATION']['mycall']}-{config['STATION']['myssid']}"
-        self.mygrid = maidenhead.generate_full_maidenhead(config["STATION"]["mygrid"])
+        self.mygrid = config['STATION']['mygrid']
 
         # table for holding our frame templates
         self.template_list = {}
@@ -78,7 +77,6 @@ class DataFrameFactory:
             "snr": 1,
         }
 
-
     def _load_arq_templates(self):
 
         self.template_list[FR_TYPE.ARQ_SESSION_OPEN.value] = {
@@ -87,7 +85,7 @@ class DataFrameFactory:
             "origin": 6,
             "session_id": 1,
             "maximum_bandwidth": 2,
-            "protocol_version" : 1
+            "protocol_version": 1
         }
 
         self.template_list[FR_TYPE.ARQ_SESSION_OPEN_ACK.value] = {
@@ -113,7 +111,7 @@ class DataFrameFactory:
         self.template_list[FR_TYPE.ARQ_SESSION_INFO_ACK.value] = {
             "frame_length": self.LENGTH_SIG0_FRAME,
             "session_id": 1,
-            "offset": 4,
+            "total_crc": 4,
             "snr": 1,
             "speed_level": 1,
             "frames_per_burst": 1,
@@ -143,13 +141,13 @@ class DataFrameFactory:
         self.template_list[FR_TYPE.ARQ_BURST_ACK.value] = {
             "frame_length": self.LENGTH_ACK_FRAME,
             "session_id": 1,
-            #"offset":4,
+            # "offset":4,
             "speed_level": 1,
-            #"frames_per_burst": 1,
-            #"snr": 1,
+            # "frames_per_burst": 1,
+            # "snr": 1,
             "flag": 1,
         }
-    
+
     def _load_p2p_connection_templates(self):
         # p2p connect request
         self.template_list[FR_TYPE.P2P_CONNECTION_CONNECT.value] = {
@@ -158,7 +156,7 @@ class DataFrameFactory:
             "origin": 6,
             "session_id": 1,
         }
-        
+
         # connect ACK
         self.template_list[FR_TYPE.P2P_CONNECTION_CONNECT_ACK.value] = {
             "frame_length": self.LENGTH_SIG1_FRAME,
@@ -166,7 +164,7 @@ class DataFrameFactory:
             "origin": 6,
             "session_id": 1,
         }
-        
+
         # heartbeat for "is alive"
         self.template_list[FR_TYPE.P2P_CONNECTION_HEARTBEAT.value] = {
             "frame_length": self.LENGTH_SIG1_FRAME,
@@ -189,11 +187,11 @@ class DataFrameFactory:
 
         # p2p payload frame ack
         self.template_list[FR_TYPE.P2P_CONNECTION_PAYLOAD_ACK.value] = {
-            "frame_length": self.LENGTH_SIG1_FRAME,
+            "frame_length": self.LENGTH_ACK_FRAME,
             "session_id": 1,
             "sequence_id": 1,
         }
-        
+
         # heartbeat for "is alive"
         self.template_list[FR_TYPE.P2P_CONNECTION_DISCONNECT.value] = {
             "frame_length": self.LENGTH_SIG1_FRAME,
@@ -206,9 +204,7 @@ class DataFrameFactory:
             "session_id": 1,
         }
 
-
-
-    def construct(self, frametype, content, frame_length = LENGTH_SIG1_FRAME):
+    def construct(self, frametype, content, frame_length=LENGTH_SIG1_FRAME):
         frame_template = self.template_list[frametype.value]
 
         if isinstance(frame_template["frame_length"], int):
@@ -239,8 +235,9 @@ class DataFrameFactory:
 
         buffer_position = 1
         # Handle the case where the frame type is not recognized
-        #raise ValueError(f"Unknown frame type: {frametype}")
-        if mode_name in ["SIGNALLING_ACK"]:
+        # raise ValueError(f"Unknown frame type: {frametype}")
+        if mode_name in ["SIGNALLING_ACK"] and int.from_bytes(frame[:1], "big") not in [
+            FR_TYPE.P2P_CONNECTION_PAYLOAD_ACK.value]:
             frametype = FR_TYPE.ARQ_BURST_ACK.value
             frame_template = self.template_list.get(frametype)
             frame = bytes([frametype]) + frame
@@ -256,7 +253,7 @@ class DataFrameFactory:
                 continue
 
             # data is always on the last payload slots
-            if item_length in ["dynamic"] and key in["data"]:
+            if item_length in ["dynamic"] and key in ["data"]:
                 print(len(frame))
                 data = frame[buffer_position:-2]
                 item_length = len(data)
@@ -273,9 +270,9 @@ class DataFrameFactory:
             elif key == "gridsquare":
                 extracted_data[key] = helpers.decode_grid(data)
 
-            elif key in ["session_id", "speed_level", 
-                            "frames_per_burst", "version",
-                            "offset", "total_length", "state", "type", "maximum_bandwidth", "protocol_version"]:
+            elif key in ["session_id", "speed_level",
+                         "frames_per_burst", "version",
+                         "offset", "total_length", "state", "type", "maximum_bandwidth", "protocol_version"]:
                 extracted_data[key] = int.from_bytes(data, 'big')
 
             elif key in ["snr"]:
@@ -286,7 +283,8 @@ class DataFrameFactory:
                 data = int.from_bytes(data, "big")
                 extracted_data[key] = {}
                 # check for frametype for selecting the correspinding flag dictionary
-                if frametype in [FR_TYPE.ARQ_SESSION_OPEN_ACK.value, FR_TYPE.ARQ_SESSION_INFO_ACK.value, FR_TYPE.ARQ_BURST_ACK.value]:
+                if frametype in [FR_TYPE.ARQ_SESSION_OPEN_ACK.value, FR_TYPE.ARQ_SESSION_INFO_ACK.value,
+                                 FR_TYPE.ARQ_BURST_ACK.value]:
                     flag_dict = self.ARQ_FLAGS
                     for flag in flag_dict:
                         # Update extracted_data with the status of each flag
@@ -312,11 +310,11 @@ class DataFrameFactory:
         freedv = codec2.open_instance(mode.value)
         bytes_per_frame = int(codec2.api.freedv_get_bits_per_modem_frame(freedv) / 8)
         return bytes_per_frame
-    
-    def get_available_data_payload_for_mode(self, type: FR_TYPE, mode:codec2.FREEDV_MODE):
+
+    def get_available_data_payload_for_mode(self, type: FR_TYPE, mode: codec2.FREEDV_MODE):
         whole_frame_length = self.get_bytes_per_frame(mode)
-        available = whole_frame_length - 2 # 2Bytes CRC16
-        available -= 1 # Frame Type
+        available = whole_frame_length - 2  # 2Bytes CRC16
+        available -= 1  # Frame Type
         for field, length in self.template_list[type.value].items():
             if field != 'frame_length' and isinstance(length, int):
                 available -= length
@@ -379,7 +377,7 @@ class DataFrameFactory:
         payload = {
             "origin": helpers.callsign_to_bytes(self.myfullcall),
             "mode": bytes([mode_int]),
-            "n_bursts": bytes([1]) # n payload bursts,
+            "n_bursts": bytes([1])  # n payload bursts,
 
         }
         return self.construct(FR_TYPE.FEC_WAKEUP, payload)
@@ -393,10 +391,8 @@ class DataFrameFactory:
         fec_frame[1:payload_per_frame] = bytes(payload[:fec_payload_length])
         return fec_frame
 
-    def build_test(self, mode):
-        mode_int = codec2.freedv_get_mode_value_by_name(mode)
-        payload_per_frame = codec2.get_bytes_per_frame(mode_int) - 2
-        test_frame = bytearray(payload_per_frame)
+    def build_test(self):
+        test_frame = bytearray(126)
         test_frame[:1] = bytes([FR_TYPE.TEST_FRAME.value])
         return test_frame
 
@@ -424,7 +420,7 @@ class DataFrameFactory:
             "flag": flag.to_bytes(1, 'big'),
         }
         return self.construct(FR_TYPE.ARQ_SESSION_OPEN_ACK, payload)
-    
+
     def build_arq_session_info(self, session_id: int, total_length: int, total_crc: bytes, snr, type):
         flag = 0b00000000
 
@@ -451,7 +447,8 @@ class DataFrameFactory:
         }
         return self.construct(FR_TYPE.ARQ_STOP_ACK, payload)
 
-    def build_arq_session_info_ack(self, session_id, offset, snr, speed_level, frames_per_burst, flag_final=False, flag_abort=False):
+    def build_arq_session_info_ack(self, session_id, total_crc, snr, speed_level, frames_per_burst, flag_final=False,
+                                   flag_abort=False):
         flag = 0b00000000
         if flag_final:
             flag = helpers.set_flag(flag, 'FINAL', True, self.ARQ_FLAGS)
@@ -461,15 +458,16 @@ class DataFrameFactory:
         payload = {
             "frame_length": self.LENGTH_SIG0_FRAME,
             "session_id": session_id.to_bytes(1, 'big'),
-            "offset": offset.to_bytes(4, 'big'),
+            "total_crc": bytes.fromhex(total_crc),
             "snr": helpers.snr_to_bytes(1),
             "speed_level": speed_level.to_bytes(1, 'big'),
             "frames_per_burst": frames_per_burst.to_bytes(1, 'big'),
             "flag": flag.to_bytes(1, 'big'),
-        }        
+        }
         return self.construct(FR_TYPE.ARQ_SESSION_INFO_ACK, payload)
 
-    def build_arq_burst_frame(self, freedv_mode: codec2.FREEDV_MODE, session_id: int, offset: int, data: bytes, speed_level: int):
+    def build_arq_burst_frame(self, freedv_mode: codec2.FREEDV_MODE, session_id: int, offset: int, data: bytes,
+                              speed_level: int):
         payload = {
             "session_id": session_id.to_bytes(1, 'big'),
             "speed_level": speed_level.to_bytes(1, 'big'),
@@ -480,7 +478,8 @@ class DataFrameFactory:
             FR_TYPE.ARQ_BURST_FRAME, payload, self.get_bytes_per_frame(freedv_mode)
         )
 
-    def build_arq_burst_ack(self, session_id: bytes, speed_level: int, flag_final=False, flag_checksum=False, flag_abort=False):
+    def build_arq_burst_ack(self, session_id: bytes, speed_level: int, flag_final=False, flag_checksum=False,
+                            flag_abort=False):
         flag = 0b00000000
         if flag_final:
             flag = helpers.set_flag(flag, 'FINAL', True, self.ARQ_FLAGS)
@@ -497,7 +496,7 @@ class DataFrameFactory:
             "flag": flag.to_bytes(1, 'big'),
         }
         return self.construct(FR_TYPE.ARQ_BURST_ACK, payload)
-    
+
     def build_p2p_connection_connect(self, destination, origin, session_id):
         payload = {
             "destination_crc": helpers.get_crc_24(destination),
@@ -505,7 +504,7 @@ class DataFrameFactory:
             "session_id": session_id.to_bytes(1, 'big'),
         }
         return self.construct(FR_TYPE.P2P_CONNECTION_CONNECT, payload)
-    
+
     def build_p2p_connection_connect_ack(self, destination, origin, session_id):
         payload = {
             "destination_crc": helpers.get_crc_24(destination),
@@ -513,20 +512,21 @@ class DataFrameFactory:
             "session_id": session_id.to_bytes(1, 'big'),
         }
         return self.construct(FR_TYPE.P2P_CONNECTION_CONNECT_ACK, payload)
-    
+
     def build_p2p_connection_heartbeat(self, session_id):
         payload = {
             "session_id": session_id.to_bytes(1, 'big'),
         }
         return self.construct(FR_TYPE.P2P_CONNECTION_HEARTBEAT, payload)
-    
+
     def build_p2p_connection_heartbeat_ack(self, session_id):
         payload = {
             "session_id": session_id.to_bytes(1, 'big'),
         }
         return self.construct(FR_TYPE.P2P_CONNECTION_HEARTBEAT_ACK, payload)
-    
-    def build_p2p_connection_payload(self, freedv_mode: codec2.FREEDV_MODE, session_id: int, sequence_id: int, data: bytes):
+
+    def build_p2p_connection_payload(self, freedv_mode: codec2.FREEDV_MODE, session_id: int, sequence_id: int,
+                                     data: bytes):
         payload = {
             "session_id": session_id.to_bytes(1, 'big'),
             "sequence_id": sequence_id.to_bytes(1, 'big'),
@@ -537,7 +537,7 @@ class DataFrameFactory:
             payload,
             self.get_bytes_per_frame(freedv_mode),
         )
-    
+
     def build_p2p_connection_payload_ack(self, session_id, sequence_id):
         payload = {
             "session_id": session_id.to_bytes(1, 'big'),
