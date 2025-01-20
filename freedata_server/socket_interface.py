@@ -57,14 +57,14 @@ class CommandSocket(socketserver.BaseRequestHandler):
                 args = data[len(command):].strip().split()
                 self.dispatch_command(command, args)
                 return
-        self.send_response("ERROR: Unknown command\r\n")
+        self.command_handler.send_response("ERROR: Unknown command\r\n")
 
     def dispatch_command(self, command, data):
         if command in self.handlers:
             handler = self.handlers[command]
             handler(data)
         else:
-            self.send_response(f"Unknown command: {command}")
+            self.command_handler.send_response(f"Unknown command: {command}")
 
 
 
